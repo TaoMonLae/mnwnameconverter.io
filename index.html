@@ -135,7 +135,7 @@
                         placeholder="ဥပမာ၊ အောင်မင်းကျော်">
                 </div>
                 <div id="monInputGroup" class="hidden">
-                    <label for="monNameInput"
+                    <label for="monName"
                         class="my-font block text-left text-sm font-medium text-slate-300 mb-2">ချူစုတ် ယၟုမန်ညိ</label>
                     <input type="text" id="monName" 
                     class="my-font bg-slate-700 border border-slate-600 text-white text-lg rounded-lg
@@ -165,7 +165,7 @@
                 <div id="outputDiv"
                     class="my-font bg-slate-900 border border-slate-700 text-cyan-300 text-2xl rounded-lg w-full p-4 pr-12 min-h-[70px] flex items-center justify-center flex-wrap">
                 </div>
-                <button id="copyBtn" title="Copy to Clipboard"
+                <button id="copyBtn" title="Copy to Clipboard" aria-label="Copy result to clipboard"
                     class="absolute top-10 right-3 text-slate-500 hover:text-cyan-400 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
                         stroke="currentColor" stroke-width="2">
@@ -519,17 +519,31 @@
             optionContainer.parentNode.replaceChild(textNode, optionContainer);
         }
 
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
         function renderOutput(inputText, map) {
             outputDiv.innerHTML = '';
             if (!inputText) return;
-            const regex = new RegExp(Object.keys(map).sort((a, b) => b.length - a.length).join('|'), 'gi');
+            const keys = Object.keys(map);
+            if (keys.length === 0) return;
+
+            const normalizedMap = Object.fromEntries(
+                Object.entries(map).map(([key, value]) => [key.toLowerCase(), value])
+            );
+            const pattern = keys
+                .sort((a, b) => b.length - a.length)
+                .map(escapeRegExp)
+                .join('|');
+            const regex = new RegExp(pattern, 'gi');
             let lastIndex = 0;
             let match;
             while ((match = regex.exec(inputText)) !== null) {
                 if (match.index > lastIndex) {
                     outputDiv.appendChild(document.createTextNode(inputText.substring(lastIndex, match.index)));
                 }
-                const replacement = map[match[0]];
+                const replacement = normalizedMap[match[0].toLowerCase()];
                 if (Array.isArray(replacement)) {
                     const optionContainer = document.createElement('span');
                     replacement.forEach(option => {
@@ -574,6 +588,20 @@
             monNameInput.value = '';
             englishNameInput.value = '';
             outputDiv.innerHTML = '';
+            convertBtn.disabled = true;
+            convertBtn.classList.add('opacity-60', 'cursor-not-allowed', 'hover:scale-100');
+        }
+
+        function updateConvertButtonState() {
+            const fromLang = fromLangSelect.value;
+            const toLang = toLangSelect.value;
+            const inputText = document.getElementById(`${fromLang}Name`).value.trim();
+            const isDisabled = fromLang === toLang || !inputText;
+
+            convertBtn.disabled = isDisabled;
+            convertBtn.classList.toggle('opacity-60', isDisabled);
+            convertBtn.classList.toggle('cursor-not-allowed', isDisabled);
+            convertBtn.classList.toggle('hover:scale-100', isDisabled);
         }
 
         function showToast(message) {
@@ -608,11 +636,12 @@
                     <span class="${toFont}">${item.toText}</span>
                 `;
                 historyItem.onclick = () => {
-                    document.getElementById(`${item.fromLang}Name`).value = item.fromText;
                     fromLangSelect.value = item.fromLang;
                     toLangSelect.value = item.toLang;
                     updateUI();
+                    document.getElementById(`${item.fromLang}Name`).value = item.fromText;
                     outputDiv.textContent = item.toText;
+                    updateConvertButtonState();
                 };
                 historyPanel.appendChild(historyItem);
             });
@@ -635,14 +664,31 @@
             });
         }
 
-        fromLangSelect.addEventListener('change', updateUI);
-        toLangSelect.addEventListener('change', updateUI);
+        [burmeseNameInput, monNameInput, englishNameInput].forEach((input) => {
+            input.addEventListener('input', updateConvertButtonState);
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' && !convertBtn.disabled) {
+                    event.preventDefault();
+                    convertBtn.click();
+                }
+            });
+        });
+
+        fromLangSelect.addEventListener('change', () => {
+            updateUI();
+            updateConvertButtonState();
+        });
+        toLangSelect.addEventListener('change', () => {
+            updateUI();
+            updateConvertButtonState();
+        });
 
         swapBtn.addEventListener('click', () => {
             const from = fromLangSelect.value;
             fromLangSelect.value = toLangSelect.value;
             toLangSelect.value = from;
             updateUI();
+            updateConvertButtonState();
         });
 
         convertBtn.addEventListener('click', () => {
@@ -697,6 +743,7 @@
             monNameInput.value = '';
             englishNameInput.value = '';
             outputDiv.innerHTML = '';
+            updateConvertButtonState();
         });
 
         copyBtn.addEventListener('click', () => {
