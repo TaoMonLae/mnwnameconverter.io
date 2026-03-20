@@ -97,7 +97,7 @@
             </div>
 
             <!-- Language Selectors -->
-            <div class="flex items-center gap-2 mb-4">
+            <div class="flex items-center gap-2 mb-2">
                 <div class="w-full">
                     <label for="fromLang" class="text-sm text-slate-400">From</label>
                     <select id="fromLang"
@@ -126,6 +126,7 @@
                 </div>
             </div>
 
+            <p id="statusHint" class="text-xs text-slate-400 mb-4">Choose source and target languages, then enter a name.</p>
             <div id="inputContainer" class="relative">
                 <div id="burmeseInputGroup">
                     <label for="burmeseName"
@@ -163,7 +164,8 @@
                 <label id="outputLabel"
                     class="my-font block text-left text-sm font-medium text-slate-300 mb-2">Result</label>
                 <div id="outputDiv"
-                    class="my-font bg-slate-900 border border-slate-700 text-cyan-300 text-2xl rounded-lg w-full p-4 pr-12 min-h-[70px] flex items-center justify-center flex-wrap">
+                    class="my-font bg-slate-900 border border-slate-700 text-cyan-300 text-2xl rounded-lg w-full p-4 pr-12 min-h-[70px] flex items-center justify-center flex-wrap"
+                    aria-live="polite">
                 </div>
                 <button id="copyBtn" title="Copy to Clipboard" aria-label="Copy result to clipboard"
                     class="absolute top-10 right-3 text-slate-500 hover:text-cyan-400 transition-colors">
@@ -325,7 +327,7 @@
         </div>
     </div>
 
-    <div id="toast"
+    <div id="toast" aria-live="polite"
         class="hidden fixed bottom-5 right-5 bg-green-500 text-white py-3 px-6 rounded-lg shadow-lg transform translate-y-20 opacity-0">
     </div>
 
@@ -364,6 +366,7 @@
         const monInputGroup = document.getElementById('monInputGroup');
         const englishInputGroup = document.getElementById('englishInputGroup');
         const outputLabel = document.getElementById('outputLabel');
+        const statusHint = document.getElementById('statusHint');
         const nameCard = document.getElementById('nameCard');
         const cardToLabel = document.getElementById('cardToLabel');
         const cardToName = document.getElementById('cardToName');
@@ -404,7 +407,7 @@
             mon_english: {}
         };
         const reverseDictionaries = {};
-        let conversionHistory = [];
+        let conversionHistory = JSON.parse(localStorage.getItem('conversionHistory') || '[]');
         let selectedCardBackground = 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)';
 
         const predefinedBackgrounds = ['linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', 'linear-gradient(135deg, #3730a3 0%, #1e1b4b 100%)', 'linear-gradient(135deg, #047857 0%, #064e3b 100%)', 'https://images.unsplash.com/photo-1554147090-e1221a04a025?ixlib=rb-4.0.3&q=85&fm=jpg&crop=entropy&cs=srgb&w=600', 'https://images.unsplash.com/photo-1501854140801-50d01698950b?ixlib=rb-4.0.3&q=85&fm=jpg&crop=entropy&cs=srgb&w=600', 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?ixlib=rb-4.0.3&q=85&fm=jpg&crop=entropy&cs=srgb&w=600'];
@@ -517,6 +520,13 @@
             const optionContainer = event.target.parentElement;
             const textNode = document.createTextNode(chosenWord);
             optionContainer.parentNode.replaceChild(textNode, optionContainer);
+            if (!outputDiv.querySelector('.choice-button')) {
+                const fromLang = fromLangSelect.value;
+                const toLang = toLangSelect.value;
+                const inputText = document.getElementById(`${fromLang}Name`).value.trim();
+                const resultText = outputDiv.textContent.trim();
+                if (inputText && resultText) updateHistory(fromLang, inputText, toLang, resultText);
+            }
         }
 
         function escapeRegExp(string) {
@@ -564,7 +574,8 @@
             }
         }
 
-        function updateUI() {
+        function updateUI(options = {}) {
+            const { preserveState = false } = options;
             const fromLang = fromLangSelect.value;
             const toLang = toLangSelect.value;
             const langLabels = {
@@ -582,14 +593,19 @@
             document.getElementById(`${fromLang}InputGroup`).classList.remove('hidden');
 
             outputLabel.textContent = `Result in ${langLabels[toLang]}`;
+            statusHint.textContent = fromLang === toLang
+                ? 'Source and target languages must be different.'
+                : `Ready: ${langLabels[fromLang]} → ${langLabels[toLang]}`;
             outputDiv.className = `bg-slate-900 border border-slate-700 text-cyan-300 text-2xl rounded-lg w-full p-4 pr-12 min-h-[70px] flex items-center justify-center flex-wrap ${fontClasses[toLang]}`;
 
-            burmeseNameInput.value = '';
-            monNameInput.value = '';
-            englishNameInput.value = '';
-            outputDiv.innerHTML = '';
-            convertBtn.disabled = true;
-            convertBtn.classList.add('opacity-60', 'cursor-not-allowed', 'hover:scale-100');
+            if (!preserveState) {
+                burmeseNameInput.value = '';
+                monNameInput.value = '';
+                englishNameInput.value = '';
+                outputDiv.innerHTML = '';
+                convertBtn.disabled = true;
+                convertBtn.classList.add('opacity-60', 'cursor-not-allowed', 'hover:scale-100');
+            }
         }
 
         function updateConvertButtonState() {
@@ -602,6 +618,7 @@
             convertBtn.classList.toggle('opacity-60', isDisabled);
             convertBtn.classList.toggle('cursor-not-allowed', isDisabled);
             convertBtn.classList.toggle('hover:scale-100', isDisabled);
+            statusHint.classList.toggle('text-amber-300', fromLang === toLang);
         }
 
         function showToast(message) {
@@ -616,6 +633,7 @@
         function updateHistory(fromLang, fromText, toLang, toText) {
             conversionHistory.unshift({ fromLang, fromText, toLang, toText });
             if (conversionHistory.length > 5) conversionHistory.pop();
+            localStorage.setItem('conversionHistory', JSON.stringify(conversionHistory));
             renderHistory();
         }
 
@@ -675,19 +693,28 @@
         });
 
         fromLangSelect.addEventListener('change', () => {
+            if (fromLangSelect.value === toLangSelect.value) {
+                toLangSelect.value = ['burmese', 'mon', 'english'].find(lang => lang !== fromLangSelect.value);
+            }
             updateUI();
             updateConvertButtonState();
         });
         toLangSelect.addEventListener('change', () => {
+            if (toLangSelect.value === fromLangSelect.value) {
+                fromLangSelect.value = ['burmese', 'mon', 'english'].find(lang => lang !== toLangSelect.value);
+            }
             updateUI();
             updateConvertButtonState();
         });
 
         swapBtn.addEventListener('click', () => {
             const from = fromLangSelect.value;
+            const fromText = document.getElementById(`${from}Name`).value;
             fromLangSelect.value = toLangSelect.value;
             toLangSelect.value = from;
-            updateUI();
+            updateUI({ preserveState: true });
+            document.getElementById(`${fromLangSelect.value}Name`).value = outputDiv.textContent.trim() || fromText;
+            outputDiv.innerHTML = '';
             updateConvertButtonState();
         });
 
@@ -728,14 +755,12 @@
 
             renderOutput(inputText, mapToUse);
 
-            // Use a small delay to allow UI to update before saving to history
-            setTimeout(() => {
+            if (!outputDiv.querySelector('.choice-button')) {
                 const resultText = outputDiv.textContent.trim();
-                // Only update history if there are no unresolved choices
-                if (inputText && resultText && !outputDiv.querySelector('.choice-button')) {
-                    updateHistory(fromLang, inputText, toLang, resultText);
-                }
-            }, 100);
+                if (inputText && resultText) updateHistory(fromLang, inputText, toLang, resultText);
+            } else {
+                showToast('Choose one highlighted option to finalize your result.');
+            }
         });
 
         clearBtn.addEventListener('click', () => {
